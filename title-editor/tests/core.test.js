@@ -1,0 +1,153 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const C = require('./core.js');
+
+test('valid title.json round-trips with fixed key order and string Type', () => {
+  const source = `[
+    {
+      "id": "sample_001",
+      "title": "初見プレイヤー",
+      "plateId": "01",
+      "description": "この曲を初めてプレイした",
+      "condition": {
+        "type": "play",
+        "difficulty": -1,
+        "optionConditions": []
+      }
+    },
+    {
+      "Id": "sample_002",
+      "Title": "超絶スピードスター",
+      "PlateId": "02",
+      "Description": "スクロール速度2.0倍以上でフルコンボ",
+      "Condition": {
+        "Type": "FullCombo",
+        "Difficulty": 3,
+        "OptionConditions": ["ScrollSpeed>=2.0"]
+      }
+    }
+  ]`;
+
+  const result = C.parseTitleJson(source);
+  assert.equal(result.ok, true);
+  assert.equal(result.titles.length, 2);
+  assert.equal(result.titles[0].type, 'Play');
+  assert.equal(result.titles[0].id, 'sample_001');
+
+  const output = C.serializeTitles(result.titles);
+  assert.equal(output.includes('"Type": "Play"'), true);
+  assert.equal(output.includes('"type"'), false);
+  assert.equal(output.endsWith('\n'), true);
+  assert.equal(output.includes('\t'), false);
+
+  const reparsed = JSON.parse(output);
+  assert.deepEqual(Object.keys(reparsed[0]), ['Id', 'Title', 'PlateId', 'Description', 'Condition']);
+  assert.deepEqual(Object.keys(reparsed[0].Condition), ['Type', 'Difficulty', 'OptionConditions']);
+  assert.equal(reparsed[1].Condition.OptionConditions[0], 'ScrollSpeed>=2.0');
+});
+
+test('import fills null Condition and null OptionConditions', () => {
+  const result = C.parseTitleJson('[{"Id":"a","Title":"A","Condition":null}]');
+  assert.equal(result.ok, true);
+  assert.equal(result.titles[0].type, 'Play');
+  assert.equal(result.titles[0].difficulty, -1);
+  assert.deepEqual(result.titles[0].conditions, []);
+  assert.equal(result.notes.some((note) => note.code === 'V-105'), true);
+});
+
+test('import rejects non-array roots and non-object entries', () => {
+  assert.equal(C.parseTitleJson('{"Id":"a"}').ok, false);
+  assert.equal(C.parseTitleJson('[1]').ok, false);
+  assert.equal(C.parseTitleJson('[{"Id":"a","Condition":{"OptionConditions":[1]}}]').ok, false);
+});
+
+test('validation blocks empty and duplicate IDs and bad expressions', () => {
+  const titles = [
+    C.createTitle({ id: '', title: 'A', plateId: '01' }),
+    C.createTitle({ id: 'same', title: 'B', plateId: '01', conditions: ['Doron>=1'] }),
+    C.createTitle({ id: 'same', title: 'あ'.repeat(25), plateId: '01', conditions: ['ScrollSpeed=2.3'] }),
+    C.createTitle({ id: 'conflict', title: 'D', plateId: '01', conditions: ['Swap=true', 'Swap=false'] }),
+    C.createTitle({ id: 'dupname1', title: '同じ名前', plateId: '01' }),
+    C.createTitle({ id: 'dupname2', title: '同じ名前', plateId: '01' }),
+  ];
+  const result = C.validateAll(titles);
+  const codes = result.issues.map((issue) => issue.code);
+  assert.ok(codes.includes('V-201'));
+  assert.ok(codes.includes('V-202'));
+  assert.ok(codes.includes('V-804'));
+  assert.ok(codes.includes('V-809'));
+  assert.ok(codes.includes('V-810'));
+  assert.equal(codes.includes('V-303'), false);
+  assert.equal(codes.includes('V-304'), false);
+  assert.equal(codes.includes('V-305'), false);
+  assert.equal(result.counts.errors > 0, true);
+});
+
+test('valid condition sets are satisfiable and evaluate correctly', () => {
+  assert.equal(C.conditionsSatisfiable(['ScrollSpeed>=2.0', 'Swap=true']), true);
+  assert.equal(C.conditionsSatisfiable(['Swap=true', 'Swap=false']), false);
+  assert.equal(C.evaluateExpression('ScrollSpeed>=2.0', { scrollSpeed: 2.0 }), true);
+  assert.equal(C.evaluateExpression('ScrollSpeed>=2.0', { scrollSpeed: 1.9 }), false);
+  assert.equal(C.evaluateExpression('Doron!=0', { doron: 2 }), true);
+  assert.equal(C.evaluateExpression('ScrollSpeed=2.3', { scrollSpeed: 2.3 }), true);
+});
+
+test('condition summaries follow the design examples', () => {
+  assert.equal(
+    C.summarizeCondition({ type: 'FullCombo', difficulty: 3, conditions: ['ScrollSpeed>=2.0'] }),
+    'おにで、スクロール速度2.0以上の状態でフルコンボすると獲得'
+  );
+  assert.equal(
+    C.summarizeCondition({ type: 'Play', difficulty: -1, conditions: [] }),
+    '全難易度でプレイすると獲得'
+  );
+  assert.equal(
+    C.summarizeCondition({ type: 'DonderfulCombo', difficulty: 4, conditions: ['Swap=true', 'Doron=2'] }),
+    'おに（裏）で、あべこべON・ドロン（ステルス）の状態でドンダフルコンボすると獲得'
+  );
+});
+
+test('builds the Description sentence from song, difficulty, options and type', () => {
+  assert.equal(
+    C.buildDescription({ type: 'FullCombo', difficulty: 3, conditions: ['ScrollSpeed>=2.0'] }, 'サンプル曲'),
+    'サンプル曲を難易度おにで(オプション「スクロール速度2.0以上」で)フルコンボ'
+  );
+  assert.equal(
+    C.buildDescription({ type: 'Play', difficulty: -1, conditions: [] }, ''),
+    'この曲をいずれかの難易度でプレイ'
+  );
+  assert.equal(
+    C.buildDescription({ type: 'DonderfulCombo', difficulty: 4, conditions: ['Swap=true', 'Doron=2'] }, 'テスト'),
+    'テストを難易度おに（裏）で(オプション「あべこべON・ドロン（ステルス）」で)ドンダフルコンボ'
+  );
+});
+
+test('ID allocation avoids collisions and copy suffixes', () => {
+  const existing = ['song_001', 'song_003', 'song_002_copy'];
+  assert.equal(C.nextId(existing, 'song'), 'song_004');
+  assert.equal(C.nextId([], 'title'), 'title_001');
+  assert.equal(C.nextCopyId('song_001', existing), 'song_001_copy');
+});
+
+test('templates provide the requested single and grouped sets', () => {
+  assert.equal(C.TEMPLATES.length, 6);
+  assert.deepEqual(C.TEMPLATES.map((template) => template.items.length), [1, 1, 1, 1, 3, 6]);
+  assert.equal(C.TEMPLATES[0].items[0].plateId, '02');
+  assert.equal(C.TEMPLATES[1].items[0].plateId, '02');
+  assert.equal(C.TEMPLATES[2].items[0].plateId, '03');
+  assert.equal(C.TEMPLATES[3].items[0].type, 'DonderfulCombo');
+  assert.equal(C.TEMPLATES[3].items[0].plateId, '03');
+  assert.deepEqual(C.TEMPLATES[4].items.map((item) => item.plateId), ['ex_silver', 'ex_gold', 'ex_dfc']);
+  assert.deepEqual(C.TEMPLATES[5].items.map((item) => item.plateId), [
+    'ex_silver', 'ex_gold', 'ex_dfc', 'ura_silver', 'ura_gold', 'ura_dfc',
+  ]);
+  assert.equal(C.TEMPLATES[4].useSongTitle, true);
+  assert.equal(C.TEMPLATES[5].useSongTitle, true);
+  assert.deepEqual(C.PLATE_IDS, [
+    '00', '01', '02', '03', '04',
+    'ex_silver', 'ex_gold', 'ex_dfc',
+    'ura_silver', 'ura_gold', 'ura_dfc',
+  ]);
+  assert.equal(C.TYPE_META.DonderfulCombo.label, 'ドンダフルコンボ');
+  assert.equal(C.TYPE_META.DonderfulCombo.code, 'DONDERFUL COMBO');
+});
