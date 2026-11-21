@@ -1,6 +1,7 @@
 # 1D2S 称号エディタ
 
-譜面フォルダに置く `title.json` を、ブラウザ上で作成・検証・出力できる Web ツールです。  
+譜面フォルダに置く `title.json` を、ブラウザ上で作成・検証・出力できる Web ツールです。 
+> 公開ページ: https://gabbaaim.github.io/1d2s-tools/title-editor/
 
 ## できること
 
