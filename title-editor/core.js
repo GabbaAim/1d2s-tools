@@ -478,6 +478,11 @@
     return found ? found.label : '不明な難易度';
   }
 
+  function difficultyShortLabel(value) {
+    if (value === 4) return 'おに裏';
+    return difficultyLabel(value);
+  }
+
   function describeExpression(expression) {
     const parsed = parseExpression(expression);
     if (!parsed.ok) {
@@ -550,9 +555,7 @@
    */
   function buildDescription(title, songTitle) {
     if (title && title.mode === 'multi') {
-      const song = String(songTitle || '').trim() || 'この曲';
-      const count = Array.isArray(title.requirements) ? title.requirements.length : 0;
-      return song + 'の指定した' + count + '譜面の条件をすべて満たす';
+      return buildMultiDescription(title);
     }
 
     const condition = normalizeCondition(title);
@@ -566,6 +569,67 @@
       : '';
     const type = TYPE_META[condition.type] ? TYPE_META[condition.type].label : 'プレイ';
     return song + 'を' + difficultyPart + option + type;
+  }
+
+  function buildMultiDescription(title) {    const requirements = Array.isArray(title && title.requirements) ? title.requirements : [];
+    if (requirements.length === 0) {
+      return '対象譜面の条件を満たす';
+    }
+
+    const count = requirements.length;
+    const countLabel = count === 1 ? '対象譜面' : '対象' + count + '譜面';
+    const typeLabels = requirements.map(function (requirement) {
+      const meta = TYPE_META[requirement && requirement.type];
+      return meta ? meta.label : String(requirement && requirement.type || 'プレイ');
+    });
+    const uniqueTypes = Array.from(new Set(typeLabels));
+
+    const difficulties = requirements.map(function (requirement) {
+      return requirement && requirement.difficulty;
+    });
+    const sameDifficulty = difficulties.length > 0 &&
+      difficulties[0] !== -1 &&
+      difficulties.every(function (difficulty) { return difficulty === difficulties[0]; });
+
+    let sentence;
+    if (uniqueTypes.length === 1) {
+      sentence = countLabel + 'を' + (count > 1 ? 'すべて' : '') + typeLabels[0];
+    } else {
+      sentence = countLabel + 'で、' + typeLabels.join('・') + 'の条件をそれぞれ満たす';
+    }
+
+    const details = [];
+    if (sameDifficulty) {
+      details.push(difficultyShortLabel(difficulties[0]));
+    }
+
+    const optionLists = requirements.map(function (requirement) {
+      return (requirement && Array.isArray(requirement.conditions) ? requirement.conditions : [])
+        .map(function (value) { return String(value); });
+    });
+    const hasOptions = optionLists.some(function (list) { return list.length > 0; });
+    if (hasOptions) {
+      const first = optionLists[0];
+      const allSame = optionLists.every(function (list) {
+        return list.length === first.length &&
+          list.every(function (value, index) { return value === first[index]; });
+      });
+
+      if (allSame && first.length > 0) {
+        const descriptions = first.map(describeExpression).filter(Boolean);
+        if (descriptions.length > 0) {
+          details.push('オプション「' + descriptions.join('・') + '」で');
+        }
+      } else {
+        details.push('各譜面にオプション条件あり');
+      }
+    }
+
+    if (details.length > 0) {
+      sentence += '（' + details.join('、') + '）';
+    }
+
+    return sentence;
   }
 
   function normalizeCondition(title) {

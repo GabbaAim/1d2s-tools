@@ -706,7 +706,7 @@
         '<div class="field">' +
           '<label for="requirement-path-' + index + '">譜面パス <span class="required">必須</span></label>' +
           '<input class="input" id="requirement-path-' + index + '" data-requirement-field="songPath" data-requirement-index="' + index + '" type="text" value="' + esc(requirement.songPath || '') + '" autocomplete="off" spellcheck="false" placeholder="PackA/songA/song.tja">' +
-          '<p class="field-hint">title.json からの相対パス。songs ルート基準でも解決されます。区切りは <code>/</code> で指定します。</p>' +
+          '<p class="field-hint">title.json からの相対パス。区切りは <code>/</code> で指定します。</p>' +
         '</div>' +
         '<div class="field-grid requirement-grid">' +
           '<div class="field">' +

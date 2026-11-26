@@ -224,6 +224,48 @@ test('builds the Description sentence from song, difficulty, options and type', 
     C.buildDescription({ type: 'DonderfulCombo', difficulty: 4, conditions: ['Swap=true', 'Doron=2'] }, 'テスト'),
     'テストを難易度おに（裏）で(オプション「あべこべON・ドロン（ステルス）」で)ドンダフルコンボ'
   );
+  assert.equal(
+    C.buildDescription({
+      mode: 'multi',
+      requirements: [
+        { difficulty: 4, type: 'Clear', conditions: [] },
+        { difficulty: 4, type: 'Clear', conditions: [] },
+        { difficulty: 4, type: 'Clear', conditions: [] },
+      ],
+    }, '無視される曲名'),
+    '対象3譜面をすべてクリア（おに裏）'
+  );
+  assert.equal(
+    C.buildDescription({
+      mode: 'multi',
+      requirements: [
+        { difficulty: 4, type: 'Play', conditions: [] },
+        { difficulty: 4, type: 'Clear', conditions: [] },
+        { difficulty: 4, type: 'Clear', conditions: [] },
+      ],
+    }, ''),
+    '対象3譜面で、プレイ・クリア・クリアの条件をそれぞれ満たす（おに裏）'
+  );
+  assert.equal(
+    C.buildDescription({
+      mode: 'multi',
+      requirements: [
+        { difficulty: 3, type: 'Clear', conditions: ['ScrollSpeed>=2.0'] },
+        { difficulty: 3, type: 'Clear', conditions: [] },
+      ],
+    }, ''),
+    '対象2譜面をすべてクリア（おに、各譜面にオプション条件あり）'
+  );
+  assert.equal(
+    C.buildDescription({
+      mode: 'multi',
+      requirements: [
+        { difficulty: 3, type: 'Clear', conditions: ['ScrollSpeed>=2.0'] },
+        { difficulty: 3, type: 'Clear', conditions: ['ScrollSpeed>=2.0'] },
+      ],
+    }, ''),
+    '対象2譜面をすべてクリア（おに、オプション「スクロール速度2.0以上」で）'
+  );
 });
 
 test('ID allocation avoids collisions and copy suffixes', () => {
