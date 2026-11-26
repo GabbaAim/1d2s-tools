@@ -772,6 +772,12 @@
         '</select>' +
         '<div class="field-error" id="error-difficulty">' + fieldErrorHtml('difficulty') + '</div>' +
       '</div>' +
+      '<div class="field" style="margin-top:16px">' +
+        '<label for="field-songPath">譜面パス（任意）</label>' +
+        '<input class="input' + (hasFieldError('songPath') ? ' is-invalid' : '') + '" id="field-songPath" data-field="songPath" type="text" value="' + esc(title.songPath || '') + '" autocomplete="off" spellcheck="false" placeholder="PackA/song1/song.tja" aria-describedby="hint-songPath error-songPath">' +
+        '<p class="field-hint" id="hint-songPath">空の場合は、この title.json と同じ階層の曲に適用されます。パック内の個別称号は対象の TJA を指定してください。</p>' +
+        '<div class="field-error" id="error-songPath">' + fieldErrorHtml('songPath') + '</div>' +
+      '</div>' +
       '<div class="field" style="margin-top:20px">' +
         '<div class="section-head" style="margin-bottom:8px"><span class="field-label">オプション条件</span><button type="button" class="btn btn-ghost btn-sm" data-action="add-condition">' + icon('plus', true) + '条件を追加</button></div>' +
         '<div class="condition-list" id="conditions-list">' + conditionRowsHtml(title) + '</div>' +
@@ -1114,12 +1120,13 @@
   }
 
   function refreshFieldErrors() {
-    const fields = ['id', 'title', 'plateId', 'description', 'type', 'difficulty'];
+    const fields = ['id', 'title', 'plateId', 'description', 'songPath', 'type', 'difficulty'];
     const controlIds = {
       id: 'field-id',
       title: 'field-title',
       plateId: 'field-plate',
       description: 'field-description',
+      songPath: 'field-songPath',
       type: 'field-type',
       difficulty: 'field-difficulty',
     };
@@ -1276,6 +1283,7 @@
       mode: raw && raw.mode
         ? (raw.mode === 'multi' ? 'multi' : 'single')
         : ((Array.isArray(raw && raw.requirements) && raw.requirements.length > 0) ? 'multi' : 'single'),
+      songPath: raw && raw.songPath != null ? String(raw.songPath) : '',
       type: raw && raw.type ? String(raw.type) : 'Play',
       difficulty: raw && raw.difficulty != null ? raw.difficulty : -1,
       conditions: raw && Array.isArray(raw.conditions) ? raw.conditions.map(String) : [],
@@ -1407,6 +1415,7 @@
         descriptionAuto: typeof title.descriptionAuto === 'boolean' ? title.descriptionAuto : !title.description,
         hidden: title.hidden === true,
         mode: title.mode === 'multi' ? 'multi' : 'single',
+        songPath: title.songPath != null ? String(title.songPath) : '',
         type: title.type,
         difficulty: title.difficulty,
         conditions: Array.isArray(title.conditions) ? title.conditions.slice() : [],
@@ -1800,7 +1809,7 @@
 
     if (target.dataset && target.dataset.field) {
       const field = target.dataset.field;
-      if (field === 'id' || field === 'title' || field === 'plateId' || field === 'description') {
+      if (field === 'id' || field === 'title' || field === 'plateId' || field === 'description' || field === 'songPath') {
         const title = selectedTitle();
         if (!title) return;
         commitEditHistory();
@@ -2103,6 +2112,7 @@
       descriptionAuto: title.descriptionAuto,
       hidden: title.hidden === true,
       mode: title.mode === 'multi' ? 'multi' : 'single',
+      songPath: title.songPath || '',
       requirements: Array.isArray(title.requirements)
         ? title.requirements.map(function (requirement) {
           return {
@@ -2427,6 +2437,7 @@
         title: 'field-title',
         plateId: 'field-plate',
         description: 'field-description',
+        songPath: 'field-songPath',
         difficulty: 'field-difficulty',
       };
       const element = document.getElementById(idMap[issue.field] || '');

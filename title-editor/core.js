@@ -189,6 +189,7 @@
       description: '',
       hidden: false,
       mode: 'single',
+      songPath: '',
       type: 'Play',
       difficulty: -1,
       conditions: [],
@@ -600,11 +601,14 @@
     }
 
     const condition = normalizeCondition(title);
-    result.Condition = {
-      Type: condition.type,
-      Difficulty: condition.difficulty,
-      OptionConditions: condition.optionConditions.map((value) => String(value)),
-    };
+    result.Condition = {};
+    const songPath = title && title.songPath != null ? String(title.songPath).trim() : '';
+    if (songPath) {
+      result.Condition.SongPath = songPath;
+    }
+    result.Condition.Type = condition.type;
+    result.Condition.Difficulty = condition.difficulty;
+    result.Condition.OptionConditions = condition.optionConditions.map((value) => String(value));
     return result;
   }
 
@@ -761,6 +765,23 @@
           add('error', 'V-702', index, 'difficulty', '難易度は整数で指定してください。');
         } else if (difficulty < -1 || difficulty > 4) {
           add('error', 'V-703', index, 'difficulty', '-1〜4 を指定してください。この値では条件が成立しません。');
+        }
+
+        const rawSongPath = title && title.songPath != null ? String(title.songPath) : '';
+        const songPath = rawSongPath.trim().replace(/\\/g, '/');
+        if (songPath) {
+          if (rawSongPath.includes('\\')) {
+            add('warning', 'V-126', index, 'songPath', '譜面パスの区切りは / を推奨します。');
+          }
+          if (/^[A-Za-z]:\//.test(songPath) || songPath.startsWith('/')) {
+            add('error', 'V-128', index, 'songPath', '譜面パスは songs フォルダからの相対パスで指定してください。');
+          }
+          if (songPath.split('/').includes('..')) {
+            add('error', 'V-129', index, 'songPath', '譜面パスに .. は使用できません。');
+          }
+          if (!songPath.toLowerCase().endsWith('.tja')) {
+            add('error', 'V-130', index, 'songPath', '譜面パスは .tja ファイルを指定してください。');
+          }
         }
 
         const conditions = title && Array.isArray(title.conditions) ? title.conditions : [];
@@ -972,6 +993,7 @@
       const conditionField = readKey(element, 'Condition');
       let type = 'Play';
       let difficulty = -1;
+      let songPath = '';
       let optionConditions = [];
       let mode = 'single';
       let requirements = [];
@@ -989,7 +1011,7 @@
         const condition = conditionField.value;
         checkUnknownKeys(
           condition,
-          ['Type', 'Difficulty', 'OptionConditions', 'Match', 'Requirements'],
+          ['Type', 'Difficulty', 'SongPath', 'OptionConditions', 'Match', 'Requirements'],
           (index + 1) + ' 件目の Condition');
 
         const typeField = readKey(condition, 'Type');
@@ -1019,6 +1041,20 @@
           note('info', 'V-701', 'Difficulty が未指定のため -1（全難易度）として扱います。');
         } else {
           difficulty = difficultyField.value;
+        }
+
+        const songPathField = readKey(condition, 'SongPath');
+        if (songPathField.found && songPathField.value !== undefined) {
+          if (songPathField.value === null) {
+            note('warning', 'V-207', 'SongPath に null は指定できません。空文字で補完しました。');
+          } else if (typeof songPathField.value !== 'string') {
+            return {
+              ok: false,
+              error: { code: 'V-118', message: (index + 1) + ' 件目: Condition.SongPath は文字列で指定してください。' },
+            };
+          } else {
+            songPath = songPathField.value;
+          }
         }
 
         const optionsField = readKey(condition, 'OptionConditions');
@@ -1152,6 +1188,7 @@
         description,
         hidden,
         mode,
+        songPath,
         type,
         difficulty,
         conditions: optionConditions,

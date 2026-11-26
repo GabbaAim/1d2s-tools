@@ -74,6 +74,36 @@ test('Hidden is omitted when false and written when true', () => {
   assert.equal(C.toJsonObject(hidden).Hidden, true);
 });
 
+test('Single-chart title can target a song path outside Requirements', () => {
+  const source = `[
+    {
+      "Id": "pack_single_001",
+      "Title": "個別称号",
+      "PlateId": "01",
+      "Description": "",
+      "Condition": {
+        "SongPath": "PackA/song1/song.tja",
+        "Type": "Clear",
+        "Difficulty": 3,
+        "OptionConditions": []
+      }
+    }
+  ]`;
+
+  const result = C.parseTitleJson(source);
+  assert.equal(result.ok, true);
+  assert.equal(result.titles[0].mode, 'single');
+  assert.equal(result.titles[0].songPath, 'PackA/song1/song.tja');
+
+  const output = C.serializeTitles(result.titles);
+  const reparsed = JSON.parse(output);
+  assert.deepEqual(Object.keys(reparsed[0].Condition), ['SongPath', 'Type', 'Difficulty', 'OptionConditions']);
+  assert.equal(reparsed[0].Condition.SongPath, 'PackA/song1/song.tja');
+
+  const validation = C.validateAll(result.titles);
+  assert.equal(validation.counts.errors, 0);
+});
+
 test('Multi conditions parse and round-trip all chart requirements', () => {
   const source = `[
     {
