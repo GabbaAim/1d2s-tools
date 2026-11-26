@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const C = require('./core.js');
+const C = require('../core.js');
 
 test('valid title.json round-trips with fixed key order and string Type', () => {
   const source = `[
@@ -20,6 +20,7 @@ test('valid title.json round-trips with fixed key order and string Type', () => 
       "Title": "超絶スピードスター",
       "PlateId": "02",
       "Description": "スクロール速度2.0倍以上でフルコンボ",
+      "Hidden": true,
       "Condition": {
         "Type": "FullCombo",
         "Difficulty": 3,
@@ -33,6 +34,8 @@ test('valid title.json round-trips with fixed key order and string Type', () => 
   assert.equal(result.titles.length, 2);
   assert.equal(result.titles[0].type, 'Play');
   assert.equal(result.titles[0].id, 'sample_001');
+  assert.equal(result.titles[0].hidden, false);
+  assert.equal(result.titles[1].hidden, true);
 
   const output = C.serializeTitles(result.titles);
   assert.equal(output.includes('"Type": "Play"'), true);
@@ -42,6 +45,8 @@ test('valid title.json round-trips with fixed key order and string Type', () => 
 
   const reparsed = JSON.parse(output);
   assert.deepEqual(Object.keys(reparsed[0]), ['Id', 'Title', 'PlateId', 'Description', 'Condition']);
+  assert.deepEqual(Object.keys(reparsed[1]), ['Id', 'Title', 'PlateId', 'Description', 'Hidden', 'Condition']);
+  assert.equal(reparsed[1].Hidden, true);
   assert.deepEqual(Object.keys(reparsed[0].Condition), ['Type', 'Difficulty', 'OptionConditions']);
   assert.equal(reparsed[1].Condition.OptionConditions[0], 'ScrollSpeed>=2.0');
 });
@@ -59,6 +64,75 @@ test('import rejects non-array roots and non-object entries', () => {
   assert.equal(C.parseTitleJson('{"Id":"a"}').ok, false);
   assert.equal(C.parseTitleJson('[1]').ok, false);
   assert.equal(C.parseTitleJson('[{"Id":"a","Condition":{"OptionConditions":[1]}}]').ok, false);
+  assert.equal(C.parseTitleJson('[{"Id":"a","Title":"A","Hidden":"true","Condition":{}}]').ok, false);
+});
+
+test('Hidden is omitted when false and written when true', () => {
+  const normal = C.createTitle({ id: 'a', title: 'A' });
+  const hidden = C.createTitle({ id: 'b', title: 'B', hidden: true });
+  assert.equal('Hidden' in C.toJsonObject(normal), false);
+  assert.equal(C.toJsonObject(hidden).Hidden, true);
+});
+
+test('Multi conditions parse and round-trip all chart requirements', () => {
+  const source = `[
+    {
+      "Id": "multi_001",
+      "Title": "三曲制覇",
+      "PlateId": "ex_gold",
+      "Description": "対象3曲をすべてクリア",
+      "Hidden": true,
+      "Condition": {
+        "Type": "Multi",
+        "Requirements": [
+          { "SongPath": "PackA/song1/song.tja", "Difficulty": 3, "Type": "Clear", "OptionConditions": [] },
+          { "SongPath": "PackA/song2/song.tja", "Difficulty": 4, "Type": "FullCombo", "OptionConditions": ["ScrollSpeed>=2.0"] }
+        ]
+      }
+    }
+  ]`;
+
+  const result = C.parseTitleJson(source);
+  assert.equal(result.ok, true);
+  assert.equal(result.titles[0].mode, 'multi');
+  assert.equal(result.titles[0].requirements.length, 2);
+  assert.equal(result.titles[0].requirements[0].songPath, 'PackA/song1/song.tja');
+  assert.equal(result.titles[0].requirements[1].conditions[0], 'ScrollSpeed>=2.0');
+
+  const output = C.serializeTitles(result.titles);
+  const reparsed = JSON.parse(output);
+  assert.equal(reparsed[0].Hidden, true);
+  assert.equal(reparsed[0].Condition.Type, 'Multi');
+  assert.deepEqual(Object.keys(reparsed[0].Condition), ['Type', 'Requirements']);
+  assert.deepEqual(Object.keys(reparsed[0].Condition.Requirements[0]), ['SongPath', 'Difficulty', 'Type', 'OptionConditions']);
+  assert.equal(reparsed[0].Condition.Requirements[1].Difficulty, 4);
+});
+
+test('Multi validation rejects missing chart paths and invalid difficulties', () => {
+  const titles = [
+    C.createTitle({
+      id: 'multi_bad',
+      title: 'BAD',
+      mode: 'multi',
+      requirements: [
+        { songPath: '', difficulty: 3, type: 'Clear', conditions: [] },
+        { songPath: '/absolute/song.tja', difficulty: 9, type: 'Unknown', conditions: ['Doron>=1'] },
+      ],
+    }),
+    C.createTitle({
+      id: 'multi_empty',
+      title: 'EMPTY',
+      mode: 'multi',
+      requirements: [],
+    }),
+  ];
+  const result = C.validateAll(titles);
+  const codes = result.issues.map((issue) => issue.code);
+  assert.ok(codes.includes('V-120'));
+  assert.ok(codes.includes('V-121'));
+  assert.ok(codes.includes('V-122'));
+  assert.ok(codes.includes('V-125'));
+  assert.ok(codes.includes('V-602'));
 });
 
 test('validation blocks empty and duplicate IDs and bad expressions', () => {

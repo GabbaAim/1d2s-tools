@@ -458,7 +458,10 @@
           '<span class="title-item-main">' +
             '<span class="title-item-name' + (title.title ? '' : ' is-untitled') + '">' + esc(title.title || '（無題）') + '</span>' +
             '<span class="title-item-meta">' +
-              '<span class="type-chip">' + esc(typeCode(title.type)) + '</span>' +
+              (title.mode === 'multi'
+                ? '<span class="type-chip multi-chip">MULTI</span>'
+                : '<span class="type-chip">' + esc(typeCode(title.type)) + '</span>') +
+              (title.hidden ? '<span class="type-chip hidden-chip">HIDDEN</span>' : '') +
               '<span class="title-id">' + esc(title.id || 'Id 未設定') + '</span>' +
             '</span>' +
           '</span>' +
@@ -502,6 +505,7 @@
     const index = selectedIndex();
     const total = state.titles.length;
     const type = C.TYPES.includes(title.type) ? title.type : '';
+    const isMulti = title.mode === 'multi';
     const typeDescription = C.TYPE_META[type] ? C.TYPE_META[type].description : 'プレイ条件が不明です。4 つのいずれかを選択してください。';
 
     inner.innerHTML = '' +
@@ -533,6 +537,10 @@
             '<p class="field-hint" id="hint-title">改行・制御文字は使用できません。</p>' +
             '<div class="field-error" id="error-title">' + fieldErrorHtml('title') + '</div>' +
           '</div>' +
+          '<div class="field field-wide">' +
+            '<label class="checkbox hidden-toggle"><input type="checkbox" data-field="hidden"' + (title.hidden ? ' checked' : '') + '> 隠し称号にする</label>' +
+            '<p class="field-hint">獲得するまでゲーム内の称号一覧に表示されません。</p>' +
+          '</div>' +
           '<div class="field">' +
             '<label for="field-plate">プレートID</label>' +
             plateSelectHtml(title) +
@@ -556,35 +564,22 @@
       '</section>' +
 
       '<section class="section" aria-labelledby="section-condition">' +
-        '<div class="section-head"><h3 id="section-condition">獲得条件</h3><span class="section-note">難易度と演奏オプションで判定</span></div>' +
-        '<div class="field">' +
-          '<span class="field-label" id="type-label">プレイ条件 <span class="required">必須</span></span>' +
-          '<div class="segmented' + (hasFieldError('type') ? ' is-invalid' : '') + '" id="field-type" role="group" aria-labelledby="type-label">' +
-            C.TYPES.map(function (candidate) {
-              const meta = C.TYPE_META[candidate];
-              const active = candidate === type;
-              return '<button type="button" class="segment' + (active ? ' is-active' : '') + '" data-action="set-type" data-type="' + candidate + '" aria-pressed="' + (active ? 'true' : 'false') + '">' +
-                '<span class="segment-label">' + esc(meta.label) + '</span>' +
-                '<span class="segment-code">' + esc(meta.code) + '</span>' +
-              '</button>';
-            }).join('') +
+        '<div class="section-head"><h3 id="section-condition">獲得条件</h3><span class="section-note">単一譜面／複数譜面を切り替え</span></div>' +
+        '<div class="field condition-mode-field">' +
+          '<span class="field-label">条件の種類</span>' +
+          '<div class="segmented mode-segmented" id="condition-mode" role="group" aria-label="条件の種類">' +
+            '<button type="button" class="segment' + (!isMulti ? ' is-active' : '') + '" data-action="set-condition-mode" data-mode="single" aria-pressed="' + (!isMulti ? 'true' : 'false') + '">' +
+              '<span class="segment-label">単一譜面</span>' +
+              '<span class="segment-code">SINGLE</span>' +
+            '</button>' +
+            '<button type="button" class="segment' + (isMulti ? ' is-active' : '') + '" data-action="set-condition-mode" data-mode="multi" aria-pressed="' + (isMulti ? 'true' : 'false') + '">' +
+              '<span class="segment-label">複数譜面</span>' +
+              '<span class="segment-code">MULTI</span>' +
+            '</button>' +
           '</div>' +
-          '<p class="type-description" id="type-description">' + esc(typeDescription) + '</p>' +
-          '<div class="field-error" id="error-type">' + fieldErrorHtml('type') + '</div>' +
+          '<p class="field-hint">複数譜面は、指定したすべての譜面で条件を満たすと獲得できます。</p>' +
         '</div>' +
-        '<div class="field" style="margin-top:16px">' +
-          '<label for="field-difficulty">難易度</label>' +
-          '<select class="select' + (hasFieldError('difficulty') ? ' is-invalid' : '') + '" id="field-difficulty" data-field="difficulty" aria-describedby="error-difficulty">' +
-            difficultyOptionsHtml(title.difficulty) +
-          '</select>' +
-          '<div class="field-error" id="error-difficulty">' + fieldErrorHtml('difficulty') + '</div>' +
-        '</div>' +
-        '<div class="field" style="margin-top:20px">' +
-          '<div class="section-head" style="margin-bottom:8px"><span class="field-label">オプション条件</span><button type="button" class="btn btn-ghost btn-sm" data-action="add-condition">' + icon('plus', true) + '条件を追加</button></div>' +
-          '<div class="condition-list" id="conditions-list">' + conditionRowsHtml(title) + '</div>' +
-          '<div class="field-error" id="error-conditions">' + fieldErrorHtml('conditions', { conditionIndex: null }) + '</div>' +
-          '<p class="condition-note">設定可能値: ScrollSpeed 0.5〜2.0（0.1 刻み）、2.5、3.0、3.5、4.0。Doron / Random は <code>=</code> と <code>!=</code> のみ使用できます。</p>' +
-        '</div>' +
+        (isMulti ? requirementsHtml(title) : singleConditionHtml(title, typeDescription)) +
         '<div class="summary-inline">' +
           '<span class="eyebrow small">CONDITION SUMMARY</span>' +
           '<p id="inline-summary">' + esc(C.buildDescription(title, state.songTitle)) + '</p>' +
@@ -667,6 +662,122 @@
     return title.conditions.map(function (expression, index) {
       return conditionRowHtml(title, index);
     }).join('');
+  }
+
+  function requirementDifficultyOptionsHtml(current) {
+    const values = C.DIFFICULTIES.filter(function (difficulty) { return difficulty.value >= 0; });
+    let html = values.map(function (difficulty) {
+      return '<option value="' + difficulty.value + '"' + (difficulty.value === current ? ' selected' : '') + '>' + esc(difficulty.label) + '</option>';
+    }).join('');
+    if (!values.some(function (difficulty) { return difficulty.value === current; })) {
+      html = '<option value="__invalid" selected>' + esc(String(current)) + '（不正な値）</option>' + html;
+    }
+    return html;
+  }
+
+  function requirementTypeOptionsHtml(current) {
+    let html = C.TYPES.map(function (type) {
+      return '<option value="' + type + '"' + (type === current ? ' selected' : '') + '>' + esc(C.TYPE_META[type].label) + '</option>';
+    }).join('');
+    if (!C.TYPES.includes(current)) {
+      html = '<option value="__invalid" selected>' + esc(String(current)) + '（不正な値）</option>' + html;
+    }
+    return html;
+  }
+
+  function requirementRowHtml(requirement, index) {
+    const requirements = Array.isArray(requirement.conditions) ? requirement.conditions : [];
+    const options = requirements.length
+      ? requirements.map(function (expression, optionIndex) {
+        return '' +
+          '<div class="requirement-option">' +
+            '<input class="input" data-requirement-option="' + optionIndex + '" data-requirement-index="' + index + '" value="' + esc(expression) + '" spellcheck="false" autocomplete="off" placeholder="ScrollSpeed>=2.0" aria-label="オプション条件 ' + (optionIndex + 1) + '">' +
+            '<button type="button" class="btn btn-icon btn-ghost btn-sm" data-action="remove-requirement-option" data-requirement-index="' + index + '" data-option-index="' + optionIndex + '" aria-label="オプション条件を削除" title="条件を削除">' + icon('x', true) + '</button>' +
+          '</div>';
+      }).join('')
+      : '<div class="condition-empty">オプション条件はありません。</div>';
+
+    return '' +
+      '<div class="requirement-row" data-requirement-index="' + index + '">' +
+        '<div class="requirement-head">' +
+          '<span class="condition-index">REQ ' + pad2(index + 1) + '</span>' +
+          '<button type="button" class="btn btn-danger-ghost btn-sm" data-action="remove-requirement" data-requirement-index="' + index + '">' + icon('trash', true) + '削除</button>' +
+        '</div>' +
+        '<div class="field">' +
+          '<label for="requirement-path-' + index + '">譜面パス <span class="required">必須</span></label>' +
+          '<input class="input" id="requirement-path-' + index + '" data-requirement-field="songPath" data-requirement-index="' + index + '" type="text" value="' + esc(requirement.songPath || '') + '" autocomplete="off" spellcheck="false" placeholder="PackA/songA/song.tja">' +
+          '<p class="field-hint">songs フォルダからの相対パス。区切りは <code>/</code> で指定します。</p>' +
+        '</div>' +
+        '<div class="field-grid requirement-grid">' +
+          '<div class="field">' +
+            '<label for="requirement-difficulty-' + index + '">難易度</label>' +
+            '<select class="select" id="requirement-difficulty-' + index + '" data-requirement-field="difficulty" data-requirement-index="' + index + '">' +
+              requirementDifficultyOptionsHtml(requirement.difficulty) +
+            '</select>' +
+          '</div>' +
+          '<div class="field">' +
+            '<label for="requirement-type-' + index + '">プレイ条件</label>' +
+            '<select class="select" id="requirement-type-' + index + '" data-requirement-field="type" data-requirement-index="' + index + '">' +
+              requirementTypeOptionsHtml(requirement.type) +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+        '<div class="field">' +
+          '<div class="field-label-row">' +
+            '<span class="field-label">オプション条件</span>' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-action="add-requirement-option" data-requirement-index="' + index + '">' + icon('plus', true) + '条件を追加</button>' +
+          '</div>' +
+          '<div class="requirement-options">' + options + '</div>' +
+        '</div>' +
+        '<div class="condition-error requirement-error">' + issueLines(requirementIssues(index)) + '</div>' +
+      '</div>';
+  }
+
+  function requirementsHtml(title) {
+    const requirements = Array.isArray(title.requirements) ? title.requirements : [];
+    const rows = requirements.length
+      ? requirements.map(function (requirement, index) {
+        return requirementRowHtml(requirement, index);
+      }).join('')
+      : '<div class="condition-empty">対象譜面がありません。「譜面を追加」から追加してください。</div>';
+
+    return '' +
+      '<div class="requirement-list" id="requirements-list">' + rows + '</div>' +
+      '<div class="field-error" id="error-requirements">' + fieldErrorHtml('requirements', { requirementIndex: null }) + '</div>' +
+      '<button type="button" class="btn btn-ghost btn-sm requirement-add" data-action="add-requirement">' + icon('plus', true) + '譜面を追加</button>' +
+      '<p class="condition-note">指定した譜面をすべて満たすと獲得します。各譜面の条件は個別に判定されます。</p>';
+  }
+
+  function singleConditionHtml(title, typeDescription) {
+    return '' +
+      '<div class="field">' +
+        '<span class="field-label" id="type-label">プレイ条件 <span class="required">必須</span></span>' +
+        '<div class="segmented' + (hasFieldError('type') ? ' is-invalid' : '') + '" id="field-type" role="group" aria-labelledby="type-label">' +
+          C.TYPES.map(function (candidate) {
+            const meta = C.TYPE_META[candidate];
+            const active = candidate === title.type;
+            return '<button type="button" class="segment' + (active ? ' is-active' : '') + '" data-action="set-type" data-type="' + candidate + '" aria-pressed="' + (active ? 'true' : 'false') + '">' +
+              '<span class="segment-label">' + esc(meta.label) + '</span>' +
+              '<span class="segment-code">' + esc(meta.code) + '</span>' +
+            '</button>';
+          }).join('') +
+        '</div>' +
+        '<p class="type-description" id="type-description">' + esc(typeDescription) + '</p>' +
+        '<div class="field-error" id="error-type">' + fieldErrorHtml('type') + '</div>' +
+      '</div>' +
+      '<div class="field" style="margin-top:16px">' +
+        '<label for="field-difficulty">難易度</label>' +
+        '<select class="select' + (hasFieldError('difficulty') ? ' is-invalid' : '') + '" id="field-difficulty" data-field="difficulty" aria-describedby="error-difficulty">' +
+          difficultyOptionsHtml(title.difficulty) +
+        '</select>' +
+        '<div class="field-error" id="error-difficulty">' + fieldErrorHtml('difficulty') + '</div>' +
+      '</div>' +
+      '<div class="field" style="margin-top:20px">' +
+        '<div class="section-head" style="margin-bottom:8px"><span class="field-label">オプション条件</span><button type="button" class="btn btn-ghost btn-sm" data-action="add-condition">' + icon('plus', true) + '条件を追加</button></div>' +
+        '<div class="condition-list" id="conditions-list">' + conditionRowsHtml(title) + '</div>' +
+        '<div class="field-error" id="error-conditions">' + fieldErrorHtml('conditions', { conditionIndex: null }) + '</div>' +
+        '<p class="condition-note">設定可能値: ScrollSpeed 0.5〜2.0（0.1 刻み）、2.5、3.0、3.5、4.0。Doron / Random は <code>=</code> と <code>!=</code> のみ使用できます。</p>' +
+      '</div>';
   }
 
   function conditionRowHtml(title, index) {
@@ -906,7 +1017,9 @@
       '<button type="button" class="check-item is-' + issue.severity + '" data-action="focus-issue"' +
         ' data-uid="' + esc(title && title._uid ? title._uid : '') + '"' +
         ' data-field="' + esc(issue.field) + '"' +
-        ' data-condition-index="' + (issue.conditionIndex == null ? '' : issue.conditionIndex) + '">' +
+        ' data-condition-index="' + (issue.conditionIndex == null ? '' : issue.conditionIndex) + '"' +
+        ' data-requirement-index="' + (issue.requirementIndex == null ? '' : issue.requirementIndex) + '"' +
+        ' data-option-index="' + (issue.optionIndex == null ? '' : issue.optionIndex) + '">' +
         '<span class="issue-icon ' + issue.severity + '">' + label + '</span>' +
         '<span>' + titleLabel + '<span class="issue-message">' + esc(issue.message) + '</span></span>' +
       '</button>';
@@ -966,10 +1079,22 @@
     const conditionIndex = options && Object.prototype.hasOwnProperty.call(options, 'conditionIndex')
       ? options.conditionIndex
       : undefined;
+    const requirementIndex = options && Object.prototype.hasOwnProperty.call(options, 'requirementIndex')
+      ? options.requirementIndex
+      : undefined;
     return (validation.byTitle[index] || []).filter(function (issue) {
       if (issue.field !== field) return false;
       if (conditionIndex !== undefined && issue.conditionIndex !== conditionIndex) return false;
+      if (requirementIndex !== undefined && issue.requirementIndex !== requirementIndex) return false;
       return issue.severity !== 'info';
+    });
+  }
+
+  function requirementIssues(index) {
+    const titleIndex = selectedIndex();
+    if (!validation || titleIndex < 0) return [];
+    return (validation.byTitle[titleIndex] || []).filter(function (issue) {
+      return issue.field === 'requirements' && issue.requirementIndex === index;
     });
   }
 
@@ -1008,6 +1133,16 @@
     });
     const conditionsError = document.getElementById('error-conditions');
     if (conditionsError) conditionsError.innerHTML = fieldErrorHtml('conditions', { conditionIndex: null });
+    const requirementsError = document.getElementById('error-requirements');
+    if (requirementsError) requirementsError.innerHTML = fieldErrorHtml('requirements', { requirementIndex: null });
+    document.querySelectorAll('.requirement-row').forEach(function (row) {
+      const requirementIndex = Number(row.dataset.requirementIndex);
+      const error = row.querySelector('.requirement-error');
+      if (error) error.innerHTML = issueLines(requirementIssues(requirementIndex));
+      row.classList.toggle('has-error', requirementIssues(requirementIndex).some(function (issue) {
+        return issue.severity === 'error';
+      }));
+    });
     const customPlate = document.getElementById('field-plate-custom');
     if (customPlate) customPlate.classList.toggle('is-invalid', hasFieldError('plateId'));
   }
@@ -1137,9 +1272,25 @@
       plateId: raw && raw.plateId != null ? String(raw.plateId) : '',
       description: description,
       descriptionAuto: raw && typeof raw.descriptionAuto === 'boolean' ? raw.descriptionAuto : !description,
+      hidden: raw && raw.hidden === true,
+      mode: raw && raw.mode
+        ? (raw.mode === 'multi' ? 'multi' : 'single')
+        : ((Array.isArray(raw && raw.requirements) && raw.requirements.length > 0) ? 'multi' : 'single'),
       type: raw && raw.type ? String(raw.type) : 'Play',
       difficulty: raw && raw.difficulty != null ? raw.difficulty : -1,
       conditions: raw && Array.isArray(raw.conditions) ? raw.conditions.map(String) : [],
+      requirements: raw && Array.isArray(raw.requirements)
+        ? raw.requirements.map(function (requirement) {
+          return {
+            songPath: requirement && requirement.songPath != null ? String(requirement.songPath) : '',
+            difficulty: requirement && requirement.difficulty != null ? requirement.difficulty : 3,
+            type: requirement && requirement.type ? String(requirement.type) : 'Clear',
+            conditions: requirement && Array.isArray(requirement.conditions)
+              ? requirement.conditions.map(String)
+              : [],
+          };
+        })
+        : [],
     });
   }
 
@@ -1254,9 +1405,23 @@
         plateId: title.plateId,
         description: title.description,
         descriptionAuto: typeof title.descriptionAuto === 'boolean' ? title.descriptionAuto : !title.description,
+        hidden: title.hidden === true,
+        mode: title.mode === 'multi' ? 'multi' : 'single',
         type: title.type,
         difficulty: title.difficulty,
         conditions: Array.isArray(title.conditions) ? title.conditions.slice() : [],
+        requirements: Array.isArray(title.requirements)
+          ? title.requirements.map(function (requirement) {
+            return {
+              songPath: requirement && requirement.songPath != null ? String(requirement.songPath) : '',
+              difficulty: requirement && requirement.difficulty != null ? requirement.difficulty : 3,
+              type: requirement && requirement.type ? String(requirement.type) : 'Clear',
+              conditions: requirement && Array.isArray(requirement.conditions)
+                ? requirement.conditions.slice()
+                : [],
+            };
+          })
+          : [],
       });
     });
     state.selectedUid = options && options.selectedUid && state.titles.some(function (title) { return title._uid === options.selectedUid; })
@@ -1536,6 +1701,21 @@
       case 'set-type':
         setType(target.dataset.type);
         return;
+      case 'set-condition-mode':
+        setConditionMode(target.dataset.mode);
+        return;
+      case 'add-requirement':
+        addRequirement();
+        return;
+      case 'remove-requirement':
+        removeRequirement(Number(target.dataset.requirementIndex));
+        return;
+      case 'add-requirement-option':
+        addRequirementOption(Number(target.dataset.requirementIndex));
+        return;
+      case 'remove-requirement-option':
+        removeRequirementOption(Number(target.dataset.requirementIndex), Number(target.dataset.optionIndex));
+        return;
       case 'add-condition':
         addCondition();
         return;
@@ -1575,6 +1755,8 @@
           uid: target.dataset.uid || null,
           field: target.dataset.field || null,
           conditionIndex: target.dataset.conditionIndex === '' ? null : Number(target.dataset.conditionIndex),
+          requirementIndex: target.dataset.requirementIndex === '' ? null : Number(target.dataset.requirementIndex),
+          optionIndex: target.dataset.optionIndex === '' ? null : Number(target.dataset.optionIndex),
         });
         return;
       case 'close-modal':
@@ -1637,6 +1819,29 @@
       }
     }
 
+    if (target.dataset && target.dataset.requirementField === 'songPath') {
+      const title = selectedTitle();
+      const requirementIndex = Number(target.dataset.requirementIndex);
+      const requirement = title && Array.isArray(title.requirements) ? title.requirements[requirementIndex] : null;
+      if (!requirement) return;
+      commitEditHistory();
+      requirement.songPath = target.value;
+      refreshAfterEdit();
+      return;
+    }
+
+    if (target.dataset && target.dataset.requirementOption !== undefined) {
+      const title = selectedTitle();
+      const requirementIndex = Number(target.dataset.requirementIndex);
+      const optionIndex = Number(target.dataset.requirementOption);
+      const requirement = title && Array.isArray(title.requirements) ? title.requirements[requirementIndex] : null;
+      if (!requirement || !Array.isArray(requirement.conditions)) return;
+      commitEditHistory();
+      requirement.conditions[optionIndex] = target.value;
+      refreshAfterEdit();
+      return;
+    }
+
     if (target.dataset && target.dataset.conditionPart === 'value' && target.tagName === 'INPUT') {
       commitEditHistory();
       updateConditionValue(Number(target.dataset.conditionIndex), target.value);
@@ -1655,6 +1860,40 @@
     if (!target) return;
 
     if (state.view !== 'editor') return;
+
+    if (target.dataset && target.dataset.field === 'hidden') {
+      const title = selectedTitle();
+      if (!title) return;
+      pushUndo(makeSnapshot());
+      title.hidden = Boolean(target.checked);
+      refreshAfterEdit();
+      return;
+    }
+
+    if (target.dataset && target.dataset.requirementField === 'difficulty') {
+      if (target.value === '__invalid') return;
+      const title = selectedTitle();
+      const requirementIndex = Number(target.dataset.requirementIndex);
+      const requirement = title && Array.isArray(title.requirements) ? title.requirements[requirementIndex] : null;
+      if (!requirement) return;
+      pushUndo(makeSnapshot());
+      editSnapshot = null;
+      requirement.difficulty = Number(target.value);
+      refreshAfterEdit();
+      return;
+    }
+
+    if (target.dataset && target.dataset.requirementField === 'type') {
+      const title = selectedTitle();
+      const requirementIndex = Number(target.dataset.requirementIndex);
+      const requirement = title && Array.isArray(title.requirements) ? title.requirements[requirementIndex] : null;
+      if (!requirement) return;
+      pushUndo(makeSnapshot());
+      editSnapshot = null;
+      requirement.type = target.value;
+      refreshAfterEdit();
+      return;
+    }
 
     if (target.dataset && target.dataset.field === 'difficulty') {
       if (target.value === '__invalid') return;
@@ -1862,6 +2101,18 @@
       difficulty: title.difficulty,
       conditions: title.conditions.slice(),
       descriptionAuto: title.descriptionAuto,
+      hidden: title.hidden === true,
+      mode: title.mode === 'multi' ? 'multi' : 'single',
+      requirements: Array.isArray(title.requirements)
+        ? title.requirements.map(function (requirement) {
+          return {
+            songPath: requirement.songPath,
+            difficulty: requirement.difficulty,
+            type: requirement.type,
+            conditions: requirement.conditions.slice(),
+          };
+        })
+        : [],
     });
     copy.descriptionAuto = title.descriptionAuto !== false;
     if (copy.descriptionAuto) copy.description = C.buildDescription(copy, state.songTitle);
@@ -1919,6 +2170,94 @@
     editSnapshot = null;
     title.type = type;
     updateTypeUi();
+    refreshAfterEdit();
+  }
+
+  function setConditionMode(mode) {
+    const title = selectedTitle();
+    if (!title || (mode !== 'single' && mode !== 'multi')) return;
+    const current = title.mode === 'multi' ? 'multi' : 'single';
+    if (current === mode) return;
+
+    pushUndo(makeSnapshot());
+    editSnapshot = null;
+    title.mode = mode;
+
+    if (mode === 'multi') {
+      if (!Array.isArray(title.requirements)) title.requirements = [];
+      if (title.requirements.length === 0) {
+        title.requirements.push({
+          songPath: '',
+          difficulty: 3,
+          type: 'Clear',
+          conditions: [],
+        });
+      }
+      title.descriptionAuto = false;
+    } else if (!C.TYPES.includes(title.type)) {
+      title.type = 'Play';
+    }
+
+    renderForm();
+    refreshAfterEdit();
+  }
+
+  function addRequirement() {
+    const title = selectedTitle();
+    if (!title) return;
+    pushUndo(makeSnapshot());
+    editSnapshot = null;
+    title.mode = 'multi';
+    if (!Array.isArray(title.requirements)) title.requirements = [];
+    title.requirements.push({
+      songPath: '',
+      difficulty: 3,
+      type: 'Clear',
+      conditions: [],
+    });
+    title.descriptionAuto = false;
+    renderForm();
+    refreshAfterEdit();
+    const inputs = document.querySelectorAll('[data-requirement-field="songPath"]');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }
+
+  function removeRequirement(index) {
+    const title = selectedTitle();
+    if (!title || !Array.isArray(title.requirements)) return;
+    if (index < 0 || index >= title.requirements.length) return;
+    pushUndo(makeSnapshot());
+    editSnapshot = null;
+    title.requirements.splice(index, 1);
+    renderForm();
+    refreshAfterEdit();
+  }
+
+  function addRequirementOption(index) {
+    const title = selectedTitle();
+    if (!title || !Array.isArray(title.requirements)) return;
+    const requirement = title.requirements[index];
+    if (!requirement) return;
+    pushUndo(makeSnapshot());
+    editSnapshot = null;
+    if (!Array.isArray(requirement.conditions)) requirement.conditions = [];
+    requirement.conditions.push('ScrollSpeed>=2.0');
+    renderForm();
+    refreshAfterEdit();
+    const inputs = document.querySelectorAll('[data-requirement-index="' + index + '"][data-requirement-option]');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }
+
+  function removeRequirementOption(index, optionIndex) {
+    const title = selectedTitle();
+    if (!title || !Array.isArray(title.requirements)) return;
+    const requirement = title.requirements[index];
+    if (!requirement || !Array.isArray(requirement.conditions)) return;
+    if (optionIndex < 0 || optionIndex >= requirement.conditions.length) return;
+    pushUndo(makeSnapshot());
+    editSnapshot = null;
+    requirement.conditions.splice(optionIndex, 1);
+    renderForm();
     refreshAfterEdit();
   }
 
@@ -2059,6 +2398,21 @@
           const add = document.querySelector('[data-action="add-condition"]');
           if (add) add.focus();
         }
+        return;
+      }
+
+      if (issue.field === 'requirements') {
+        if (Number.isInteger(issue.requirementIndex)) {
+          const selector = '[data-requirement-field="songPath"][data-requirement-index="' + issue.requirementIndex + '"]';
+          const input = document.querySelector(selector);
+          if (input) {
+            input.focus();
+            input.scrollIntoView({ block: 'center' });
+            return;
+          }
+        }
+        const add = document.querySelector('[data-action="add-requirement"]');
+        if (add) add.focus();
         return;
       }
 

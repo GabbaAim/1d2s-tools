@@ -1035,6 +1035,23 @@ pre {
   background: rgba(255, 255, 255, .55);
 }
 
+.type-chip.hidden-chip {
+  color: var(--warning);
+  border-color: #e6c58f;
+  background: var(--warning-pale);
+}
+
+.type-chip.multi-chip {
+  color: var(--accent);
+  border-color: #e6bdb3;
+  background: var(--accent-pale);
+}
+
+.hidden-toggle {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
 .title-id {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1435,6 +1452,73 @@ pre {
 .condition-row.has-error {
   border-color: #e3b2ac;
   background: #fffafa;
+}
+
+.condition-mode-field {
+  margin-bottom: 16px;
+}
+
+.mode-segmented {
+  max-width: 360px;
+}
+
+.requirement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.requirement-row {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.requirement-row.has-error {
+  border-color: #e3b2ac;
+  background: #fffafa;
+}
+
+.requirement-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.requirement-grid {
+  margin-top: 10px;
+}
+
+.requirement-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.requirement-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.requirement-option .input {
+  flex: 1;
+}
+
+.requirement-add {
+  margin-top: 12px;
+}
+
+.requirement-error {
+  margin-left: 0;
+}
+
+.requirement-error:empty {
+  display: none;
 }
 
 .condition-builder {

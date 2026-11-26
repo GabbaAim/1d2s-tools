@@ -28,7 +28,7 @@ jobs:
           mkdir -p _site
           cp index.html _site/
           cp -R title-editor _site/title-editor
-          rm -f _site/title-editor/core.test.js
+          rm -rf _site/title-editor/tests
 
       - uses: actions/configure-pages@v5
 

@@ -149,6 +149,16 @@
     return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 
+  function normalizeTypeName(value) {
+    if (typeof value === 'number' && TYPES[value]) return TYPES[value];
+    if (typeof value === 'string') {
+      const caseMatch = TYPES.find((candidate) => candidate.toLowerCase() === value.toLowerCase());
+      if (caseMatch) return caseMatch;
+      return value;
+    }
+    return value == null ? 'Play' : String(value);
+  }
+
   function sanitizePrefix(name) {
     const normalized = String(name || '')
       .normalize('NFKC')
@@ -177,9 +187,12 @@
       title: '',
       plateId: '',
       description: '',
+      hidden: false,
+      mode: 'single',
       type: 'Play',
       difficulty: -1,
       conditions: [],
+      requirements: [],
     };
     return Object.assign(base, overrides || {});
   }
@@ -535,6 +548,12 @@
    * 例: サンプル曲を難易度おにで(オプション「スクロール速度2.0以上」で)フルコンボ
    */
   function buildDescription(title, songTitle) {
+    if (title && title.mode === 'multi') {
+      const song = String(songTitle || '').trim() || 'この曲';
+      const count = Array.isArray(title.requirements) ? title.requirements.length : 0;
+      return song + 'の指定した' + count + '譜面の条件をすべて満たす';
+    }
+
     const condition = normalizeCondition(title);
     const song = String(songTitle || '').trim() || 'この曲';
     const difficultyPart = condition.difficulty === -1
@@ -556,18 +575,37 @@
   }
 
   function toJsonObject(title) {
-    const condition = normalizeCondition(title);
-    return {
+    const isMulti = title && title.mode === 'multi';
+    const result = {
       Id: title && title.id != null ? String(title.id) : '',
       Title: title && title.title != null ? String(title.title) : '',
       PlateId: title && title.plateId != null ? String(title.plateId) : '',
       Description: title && title.description != null ? String(title.description) : '',
-      Condition: {
-        Type: condition.type,
-        Difficulty: condition.difficulty,
-        OptionConditions: condition.optionConditions.map((value) => String(value)),
-      },
     };
+    if (title && title.hidden === true) {
+      result.Hidden = true;
+    }
+
+    if (isMulti) {
+      result.Condition = {
+        Type: 'Multi',
+        Requirements: (title.requirements || []).map((requirement) => ({
+          SongPath: String(requirement.songPath || ''),
+          Difficulty: requirement.difficulty,
+          Type: requirement.type,
+          OptionConditions: (requirement.conditions || []).map((value) => String(value)),
+        })),
+      };
+      return result;
+    }
+
+    const condition = normalizeCondition(title);
+    result.Condition = {
+      Type: condition.type,
+      Difficulty: condition.difficulty,
+      OptionConditions: condition.optionConditions.map((value) => String(value)),
+    };
+    return result;
   }
 
   function serializeTitles(titles) {
@@ -579,7 +617,7 @@
     const list = Array.isArray(titles) ? titles : [];
     const issues = [];
 
-    function add(severity, code, titleIndex, field, message, conditionIndex) {
+    function add(severity, code, titleIndex, field, message, conditionIndex, requirementIndex, optionIndex) {
       issues.push({
         severity,
         code,
@@ -587,7 +625,62 @@
         field,
         message,
         conditionIndex: conditionIndex == null ? null : conditionIndex,
+        requirementIndex: requirementIndex == null ? null : requirementIndex,
+        optionIndex: optionIndex == null ? null : optionIndex,
       });
+    }
+
+    function validateOptionExpressions(expressions, titleIndex, field, requirementIndex) {
+      const seenExpressions = new Set();
+      let errors = 0;
+      let parseable = true;
+      let individualUnsatisfiable = false;
+
+      expressions.forEach((expression, optionIndex) => {
+        const text = String(expression == null ? '' : expression);
+        const conditionIndex = field === 'conditions' ? optionIndex : null;
+        if (text.length > 200) {
+          add('error', 'V-801', titleIndex, field, '条件式が長すぎます（1 本 200 文字以内）。', conditionIndex, requirementIndex, optionIndex);
+          errors += 1;
+          parseable = false;
+          return;
+        }
+
+        const parsed = parseExpression(text);
+        if (!parsed.ok) {
+          add('error', parsed.code, titleIndex, field, parsed.message, conditionIndex, requirementIndex, optionIndex);
+          errors += 1;
+          parseable = false;
+          return;
+        }
+
+        if (parsed.type === 'number') {
+          if (parsed.operator === '=' && !speedExists(parsed.value)) {
+            add('error', 'V-809', titleIndex, field, 'ScrollSpeed の = は設定可能値（0.5〜2.0 の 0.1 刻み、2.5、3.0、3.5、4.0）で指定してください。', conditionIndex, requirementIndex, optionIndex);
+            errors += 1;
+            individualUnsatisfiable = true;
+          } else if (parsed.operator !== '=' && expressionSatisfiable(parsed) === false) {
+            add('error', 'V-808', titleIndex, field, 'この条件を満たす設定値がありません（設定可能値: 0.5〜2.0 の 0.1 刻み、2.5、3.0、3.5、4.0）。', conditionIndex, requirementIndex, optionIndex);
+            errors += 1;
+            individualUnsatisfiable = true;
+          }
+        }
+
+        const key = text.trim();
+        if (seenExpressions.has(key)) {
+          add('info', 'V-811', titleIndex, field, '同じ条件が重複しています。', conditionIndex, requirementIndex, optionIndex);
+        } else {
+          seenExpressions.add(key);
+        }
+      });
+
+      if (parseable && errors === 0 && !individualUnsatisfiable && expressions.length > 1) {
+        if (conditionsSatisfiable(expressions) === false) {
+          add('error', 'V-810', titleIndex, field, 'この条件の組み合わせを満たす設定がありません（例: Swap=true と Swap=false）。', null, requirementIndex, null);
+        }
+      }
+
+      return { errors, parseable };
     }
 
     const ids = new Map();
@@ -655,69 +748,79 @@
         add('warning', 'V-502', index, 'description', '説明文が長すぎます（200 文字以内を推奨）。');
       }
 
-      const type = title && title.type;
-      if (typeof type !== 'string' || !TYPES.includes(type)) {
-        add('error', 'V-602', index, 'type', 'プレイ条件は Play / Clear / FullCombo / DonderfulCombo のいずれかです。');
-      }
+      const isMulti = title && title.mode === 'multi';
 
-      const difficulty = title && title.difficulty;
-      if (typeof difficulty !== 'number' || !Number.isFinite(difficulty) || !Number.isInteger(difficulty)) {
-        add('error', 'V-702', index, 'difficulty', '難易度は整数で指定してください。');
-      } else if (difficulty < -1 || difficulty > 4) {
-        add('error', 'V-703', index, 'difficulty', '-1〜4 を指定してください。この値では条件が成立しません。');
-      }
-
-      const conditions = title && Array.isArray(title.conditions) ? title.conditions : [];
-      if (conditions.length > 20) {
-        add('error', 'V-808', index, 'conditions', 'オプション条件は 20 件以内にしてください。');
-      }
-
-      const seenExpressions = new Set();
-      let conditionErrors = 0;
-      let conditionsParseable = true;
-      let individualUnsatisfiable = false;
-
-      conditions.forEach((expression, conditionIndex) => {
-        const text = String(expression == null ? '' : expression);
-        if (text.length > 200) {
-          add('error', 'V-801', index, 'conditions', '条件式が長すぎます（1 本 200 文字以内）。', conditionIndex);
-          conditionErrors += 1;
-          conditionsParseable = false;
-          return;
+      if (!isMulti) {
+        const type = title && title.type;
+        if (typeof type !== 'string' || !TYPES.includes(type)) {
+          add('error', 'V-602', index, 'type', 'プレイ条件は Play / Clear / FullCombo / DonderfulCombo のいずれかです。');
         }
 
-        const parsed = parseExpression(text);
-        if (!parsed.ok) {
-          add('error', parsed.code, index, 'conditions', parsed.message, conditionIndex);
-          conditionErrors += 1;
-          conditionsParseable = false;
-          return;
+        const difficulty = title && title.difficulty;
+        if (typeof difficulty !== 'number' || !Number.isFinite(difficulty) || !Number.isInteger(difficulty)) {
+          add('error', 'V-702', index, 'difficulty', '難易度は整数で指定してください。');
+        } else if (difficulty < -1 || difficulty > 4) {
+          add('error', 'V-703', index, 'difficulty', '-1〜4 を指定してください。この値では条件が成立しません。');
         }
 
-        if (parsed.type === 'number') {
-          if (parsed.operator === '=' && !speedExists(parsed.value)) {
-            add('error', 'V-809', index, 'conditions', 'ScrollSpeed の = は設定可能値（0.5〜2.0 の 0.1 刻み、2.5、3.0、3.5、4.0）で指定してください。', conditionIndex);
-            conditionErrors += 1;
-            individualUnsatisfiable = true;
-          } else if (parsed.operator !== '=' && expressionSatisfiable(parsed) === false) {
-            add('error', 'V-808', index, 'conditions', 'この条件を満たす設定値がありません（設定可能値: 0.5〜2.0 の 0.1 刻み、2.5、3.0、3.5、4.0）。', conditionIndex);
-            conditionErrors += 1;
-            individualUnsatisfiable = true;
+        const conditions = title && Array.isArray(title.conditions) ? title.conditions : [];
+        if (conditions.length > 20) {
+          add('error', 'V-808', index, 'conditions', 'オプション条件は 20 件以内にしてください。');
+        }
+        validateOptionExpressions(conditions, index, 'conditions', null);
+      } else {
+        const requirements = title && Array.isArray(title.requirements) ? title.requirements : [];
+        if (requirements.length === 0) {
+          add('error', 'V-120', index, 'requirements', '複数譜面条件には 1 件以上の譜面を指定してください。');
+        }
+
+        const seenRequirements = new Set();
+        requirements.forEach((requirement, requirementIndex) => {
+          const rawPath = requirement && requirement.songPath != null ? String(requirement.songPath) : '';
+          const songPath = rawPath.trim().replace(/\\/g, '/');
+
+          if (!songPath) {
+            add('error', 'V-121', index, 'requirements', '譜面パスを入力してください。', null, requirementIndex);
+          } else {
+            if (rawPath.includes('\\')) {
+              add('warning', 'V-126', index, 'requirements', '譜面パスの区切りは / を推奨します。', null, requirementIndex);
+            }
+            if (/^[A-Za-z]:\//.test(songPath) || songPath.startsWith('/')) {
+              add('error', 'V-122', index, 'requirements', '譜面パスは songs フォルダからの相対パスで指定してください。', null, requirementIndex);
+            }
+            if (songPath.split('/').includes('..')) {
+              add('error', 'V-123', index, 'requirements', '譜面パスに .. は使用できません。', null, requirementIndex);
+            }
+            if (!songPath.toLowerCase().endsWith('.tja')) {
+              add('error', 'V-124', index, 'requirements', '譜面パスは .tja ファイルを指定してください。', null, requirementIndex);
+            }
           }
-        }
 
-        const key = text.trim();
-        if (seenExpressions.has(key)) {
-          add('info', 'V-811', index, 'conditions', '同じ条件が重複しています。', conditionIndex);
-        } else {
-          seenExpressions.add(key);
-        }
-      });
+          const difficulty = requirement && requirement.difficulty;
+          if (typeof difficulty !== 'number' || !Number.isFinite(difficulty) ||
+              !Number.isInteger(difficulty) || difficulty < 0 || difficulty > 4) {
+            add('error', 'V-125', index, 'requirements', '難易度は 0〜4 で指定してください。', null, requirementIndex);
+          }
 
-      if (conditionsParseable && conditionErrors === 0 && !individualUnsatisfiable && conditions.length > 1) {
-        if (conditionsSatisfiable(conditions) === false) {
-          add('error', 'V-810', index, 'conditions', 'この条件の組み合わせを満たす設定がありません（例: Swap=true と Swap=false）。');
-        }
+          const type = requirement && requirement.type;
+          if (typeof type !== 'string' || !TYPES.includes(type)) {
+            add('error', 'V-602', index, 'requirements', 'プレイ条件は Play / Clear / FullCombo / DonderfulCombo のいずれかです。', null, requirementIndex);
+          }
+
+          const options = requirement && Array.isArray(requirement.conditions) ? requirement.conditions : [];
+          if (options.length > 20) {
+            add('error', 'V-808', index, 'requirements', 'オプション条件は 20 件以内にしてください。', null, requirementIndex);
+          }
+          validateOptionExpressions(options, index, 'requirements', requirementIndex);
+
+          const key = songPath.toLowerCase() + '|' + String(difficulty) + '|' + String(type) + '|' +
+            options.map((value) => String(value)).sort().join('\u001f');
+          if (seenRequirements.has(key)) {
+            add('info', 'V-127', index, 'requirements', '同じ譜面・条件の Requirement が重複しています。', null, requirementIndex);
+          } else {
+            seenRequirements.add(key);
+          }
+        });
       }
     });
 
@@ -822,12 +925,13 @@
         };
       }
 
-      checkUnknownKeys(element, ['Id', 'Title', 'PlateId', 'Description', 'Condition'], (index + 1) + ' 件目');
+      checkUnknownKeys(element, ['Id', 'Title', 'PlateId', 'Description', 'Hidden', 'Condition'], (index + 1) + ' 件目');
 
       const idField = readKey(element, 'Id');
       const titleField = readKey(element, 'Title');
       const plateField = readKey(element, 'PlateId');
       const descriptionField = readKey(element, 'Description');
+      const hiddenField = readKey(element, 'Hidden');
 
       function readString(field, name) {
         if (!field.found || field.value === undefined) return '';
@@ -845,6 +949,7 @@
       let title;
       let plateId;
       let description;
+      let hidden = false;
       try {
         id = readString(idField, '称号ID');
         title = readString(titleField, '称号名');
@@ -854,10 +959,22 @@
         return { ok: false, error: { code: 'V-207', message: (index + 1) + ' 件目: ' + error.message } };
       }
 
+      if (hiddenField.found && hiddenField.value !== undefined) {
+        if (typeof hiddenField.value !== 'boolean') {
+          return {
+            ok: false,
+            error: { code: 'V-210', message: (index + 1) + ' 件目: Hidden は true または false で指定してください。' },
+          };
+        }
+        hidden = hiddenField.value;
+      }
+
       const conditionField = readKey(element, 'Condition');
       let type = 'Play';
       let difficulty = -1;
       let optionConditions = [];
+      let mode = 'single';
+      let requirements = [];
 
       if (!conditionField.found || conditionField.value === undefined) {
         note('warning', 'V-105', 'Condition がありません。既定値（Play／全難易度）で補完しました。');
@@ -870,7 +987,10 @@
         };
       } else {
         const condition = conditionField.value;
-        checkUnknownKeys(condition, ['Type', 'Difficulty', 'OptionConditions'], (index + 1) + ' 件目の Condition');
+        checkUnknownKeys(
+          condition,
+          ['Type', 'Difficulty', 'OptionConditions', 'Match', 'Requirements'],
+          (index + 1) + ' 件目の Condition');
 
         const typeField = readKey(condition, 'Type');
         if (!typeField.found || typeField.value === undefined) {
@@ -922,6 +1042,107 @@
             optionConditions.push(optionsField.value[optionIndex]);
           }
         }
+
+        const requirementsField = readKey(condition, 'Requirements');
+        const isMultiType = typeof type === 'string' && type.toLowerCase() === 'multi';
+        if (requirementsField.found && requirementsField.value !== undefined) {
+          if (!Array.isArray(requirementsField.value)) {
+            return {
+              ok: false,
+              error: { code: 'V-113', message: (index + 1) + ' 件目: Requirements は配列で指定してください。' },
+            };
+          }
+
+          for (let requirementIndex = 0; requirementIndex < requirementsField.value.length; requirementIndex++) {
+            const rawRequirement = requirementsField.value[requirementIndex];
+            if (!isPlainObject(rawRequirement)) {
+              return {
+                ok: false,
+                error: {
+                  code: 'V-114',
+                  message: (index + 1) + ' 件目の Requirements[' + requirementIndex + '] はオブジェクトで指定してください。',
+                },
+              };
+            }
+
+            checkUnknownKeys(
+              rawRequirement,
+              ['SongPath', 'Difficulty', 'Type', 'OptionConditions'],
+              (index + 1) + ' 件目の Requirements[' + requirementIndex + ']');
+
+            let songPath = '';
+            const songPathField = readKey(rawRequirement, 'SongPath');
+            if (songPathField.found && songPathField.value !== undefined) {
+              if (songPathField.value === null) {
+                note('warning', 'V-207', 'SongPath に null は指定できません。空文字で補完しました。');
+              } else if (typeof songPathField.value !== 'string') {
+                return {
+                  ok: false,
+                  error: {
+                    code: 'V-115',
+                    message: (index + 1) + ' 件目の Requirements[' + requirementIndex + '].SongPath は文字列で指定してください。',
+                  },
+                };
+              } else {
+                songPath = songPathField.value;
+              }
+            }
+
+            let requirementDifficulty = -1;
+            const requirementDifficultyField = readKey(rawRequirement, 'Difficulty');
+            if (requirementDifficultyField.found && requirementDifficultyField.value !== undefined) {
+              requirementDifficulty = requirementDifficultyField.value;
+            }
+
+            let requirementType = 'Play';
+            const requirementTypeField = readKey(rawRequirement, 'Type');
+            if (requirementTypeField.found && requirementTypeField.value !== undefined) {
+              requirementType = normalizeTypeName(requirementTypeField.value);
+            }
+
+            let requirementOptions = [];
+            const requirementOptionsField = readKey(rawRequirement, 'OptionConditions');
+            if (requirementOptionsField.found && requirementOptionsField.value !== undefined) {
+              if (requirementOptionsField.value === null) {
+                note('warning', 'V-106', 'OptionConditions が null です。空配列で補完しました。');
+              } else if (!Array.isArray(requirementOptionsField.value)) {
+                return {
+                  ok: false,
+                  error: {
+                    code: 'V-116',
+                    message: (index + 1) + ' 件目の Requirements[' + requirementIndex + '].OptionConditions は配列で指定してください。',
+                  },
+                };
+              } else {
+                for (let optionIndex = 0; optionIndex < requirementOptionsField.value.length; optionIndex++) {
+                  if (typeof requirementOptionsField.value[optionIndex] !== 'string') {
+                    return {
+                      ok: false,
+                      error: {
+                        code: 'V-117',
+                        message: (index + 1) + ' 件目の Requirements[' + requirementIndex + '].OptionConditions[' + optionIndex + '] は文字列で指定してください。',
+                      },
+                    };
+                  }
+                  requirementOptions.push(requirementOptionsField.value[optionIndex]);
+                }
+              }
+            }
+
+            requirements.push({
+              songPath,
+              difficulty: requirementDifficulty,
+              type: requirementType,
+              conditions: requirementOptions,
+            });
+          }
+
+          if (requirements.length > 0 || isMultiType) {
+            mode = 'multi';
+          }
+        } else if (isMultiType) {
+          mode = 'multi';
+        }
       }
 
       titles.push(createTitle({
@@ -929,9 +1150,12 @@
         title,
         plateId,
         description,
+        hidden,
+        mode,
         type,
         difficulty,
         conditions: optionConditions,
+        requirements,
       }));
     }
 
