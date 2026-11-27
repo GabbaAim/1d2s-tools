@@ -104,6 +104,27 @@ test('Single-chart title can target a song path outside Requirements', () => {
   assert.equal(validation.counts.errors, 0);
 });
 
+test('relative SongPath can use parent directory segments', () => {
+  const single = C.createTitle({
+    id: 'parent_single',
+    title: '親参照',
+    mode: 'single',
+    songPath: '../PackA/song1/song.tja',
+    type: 'Clear',
+    difficulty: 3,
+  });
+  const multi = C.createTitle({
+    id: 'parent_multi',
+    title: '親参照マルチ',
+    mode: 'multi',
+    requirements: [
+      { songPath: '../../PackA/song1/song.tja', difficulty: 4, type: 'Clear', conditions: [] },
+    ],
+  });
+  const result = C.validateAll([single, multi]);
+  assert.equal(result.counts.errors, 0);
+});
+
 test('Multi conditions parse and round-trip all chart requirements', () => {
   const source = `[
     {

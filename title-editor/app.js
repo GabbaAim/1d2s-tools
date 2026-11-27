@@ -706,7 +706,7 @@
         '<div class="field">' +
           '<label for="requirement-path-' + index + '">譜面パス <span class="required">必須</span></label>' +
           '<input class="input" id="requirement-path-' + index + '" data-requirement-field="songPath" data-requirement-index="' + index + '" type="text" value="' + esc(requirement.songPath || '') + '" autocomplete="off" spellcheck="false" placeholder="PackA/songA/song.tja">' +
-          '<p class="field-hint">title.json からの相対パス。区切りは <code>/</code> で指定します。</p>' +
+          '<p class="field-hint">title.json からの相対パス。SongsRootPath のいずれかのルート基準でも解決されます。<code>../</code> も使用できますが、SongsRootPath のいずれかのルート内に解決される必要があります。区切りは <code>/</code> で指定します。</p>' +
         '</div>' +
         '<div class="field-grid requirement-grid">' +
           '<div class="field">' +
@@ -775,7 +775,7 @@
       '<div class="field" style="margin-top:16px">' +
         '<label for="field-songPath">譜面パス（任意）</label>' +
         '<input class="input' + (hasFieldError('songPath') ? ' is-invalid' : '') + '" id="field-songPath" data-field="songPath" type="text" value="' + esc(title.songPath || '') + '" autocomplete="off" spellcheck="false" placeholder="PackA/song1/song.tja" aria-describedby="hint-songPath error-songPath">' +
-        '<p class="field-hint" id="hint-songPath">空の場合は、この title.json と同じ階層の曲に適用されます。パック内の個別称号は、この title.json からの相対パスか songs ルート基準で対象の TJA を指定してください。</p>' +
+        '<p class="field-hint" id="hint-songPath">空の場合は、この title.json と同じ階層の曲に適用されます。パック内の個別称号は、この title.json からの相対パスか SongsRootPath のいずれかのルート基準で対象の TJA を指定してください。<code>../</code> も使用できますが、SongsRootPath のいずれかのルート内に解決される必要があります。</p>' +
         '<div class="field-error" id="error-songPath">' + fieldErrorHtml('songPath') + '</div>' +
       '</div>' +
       '<div class="field" style="margin-top:20px">' +

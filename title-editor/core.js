@@ -840,9 +840,6 @@
           if (/^[A-Za-z]:\//.test(songPath) || songPath.startsWith('/')) {
             add('error', 'V-128', index, 'songPath', '譜面パスは相対パスで指定してください。');
           }
-          if (songPath.split('/').includes('..')) {
-            add('error', 'V-129', index, 'songPath', '譜面パスに .. は使用できません。');
-          }
           if (!songPath.toLowerCase().endsWith('.tja')) {
             add('error', 'V-130', index, 'songPath', '譜面パスは .tja ファイルを指定してください。');
           }
@@ -872,9 +869,6 @@
             }
             if (/^[A-Za-z]:\//.test(songPath) || songPath.startsWith('/')) {
               add('error', 'V-122', index, 'requirements', '譜面パスは相対パスで指定してください。', null, requirementIndex);
-            }
-            if (songPath.split('/').includes('..')) {
-              add('error', 'V-123', index, 'requirements', '譜面パスに .. は使用できません。', null, requirementIndex);
             }
             if (!songPath.toLowerCase().endsWith('.tja')) {
               add('error', 'V-124', index, 'requirements', '譜面パスは .tja ファイルを指定してください。', null, requirementIndex);
